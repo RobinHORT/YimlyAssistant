@@ -1,0 +1,10 @@
+{
+  "name": "Remix Yimly Home Core",
+  "description": "A custom Yimly interface powering a fully functional, standalone Home Assistant server using the official core backend.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
