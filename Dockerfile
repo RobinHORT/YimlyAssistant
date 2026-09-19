@@ -21,7 +21,7 @@ WORKDIR /app
 
 # Copy production dependencies and compiled frontend/server bundle
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --omit=dev
 COPY --from=frontend-builder /app/dist ./dist
 COPY config ./default_config
 
