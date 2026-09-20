@@ -3,3 +3,8 @@ dist
 .git
 .github
 *.log
+bun.lock
+core
+config/deps
+.env
+.DS_Store
