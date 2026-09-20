@@ -33,6 +33,10 @@ RUN if ! id -u 1000 >/dev/null 2>&1; then \
     mkdir -p /config /app && \
     chown -R 1000:1000 /config /app
 
+# Copy entrypoint script and set executable permissions
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
 # Persistent storage volume for HA Core configuration, auth, recorder, and registries
 VOLUME ["/config"]
 
@@ -46,15 +50,8 @@ ENV PYTHONUNBUFFERED=1 \
     HA_PORT=8123 \
     PORT=8080
 
-# Run container as non-root user 1000
-USER 1000:1000
-
-# Clear base image S6-overlay entrypoint so non-root CMD executes directly
-ENTRYPOINT []
-
 # Health check directly verifying Yimly & Home Assistant Core proxy status
 HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
   CMD curl -f http://localhost:${PORT:-8080}/api/yimly/server-status || exit 1
 
-# Start script: Initializes config (including hidden .storage dotfiles) if empty, boots HA Core in background, then starts Yimly Unified Proxy & UI Server
-CMD ["sh", "-c", "[ -f /config/configuration.yaml ] || cp -r /app/default_config/. /config/ ; python3 -m homeassistant -c /config & exec node dist/server.cjs"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

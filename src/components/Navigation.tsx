@@ -11,6 +11,7 @@ import {
   RefreshCw,
   LogOut,
   UserCheck,
+  ExternalLink,
 } from 'lucide-react';
 
 export type TabId = 'map' | 'people' | 'companion' | 'history' | 'registries' | 'diagnostics';
@@ -147,6 +148,18 @@ export const Navigation: React.FC<NavigationProps> = ({
 
           {/* Action Bar & User Profile */}
           <div className="flex items-center gap-2">
+            <a
+              id="open-ha-dashboard-link"
+              href="/"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open Home Assistant Core Lovelace Dashboard"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 border border-sky-500/30 transition"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
+              <span className="hidden sm:inline">HA Dashboard</span>
+            </a>
+
             <button
               id="refresh-server-btn"
               onClick={onRefresh}

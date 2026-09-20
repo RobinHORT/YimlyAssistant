@@ -54,15 +54,55 @@ async function main() {
     target: HA_TARGET,
     changeOrigin: true,
     ws: true,
+    xfwd: true,
     on: {
-      proxyReq: fixRequestBody,
+      proxyReq: (proxyReq, req) => {
+        fixRequestBody(proxyReq, req);
+        const host = req.headers.host;
+        if (host) {
+          proxyReq.setHeader('X-Forwarded-Host', host);
+        }
+      },
       error: (err, req, res: any) => {
         console.warn(`[HA PROXY] Home Assistant Core at ${HA_TARGET} unavailable:`, err.message);
         if (res && res.status && !res.headersSent) {
-          res.status(503).json({
-            message: 'Home Assistant Core is starting up, please try again in a few seconds...',
-            status: 'starting',
-          });
+          const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
+          if (acceptsHtml && req.method === 'GET') {
+            res.status(503).send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="3">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Starting Home Assistant Core...</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0f1117; color: #f1f5f9; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    .card { background: #1e2230; border: 1px solid #334155; border-radius: 12px; padding: 32px; max-width: 480px; width: 100%; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    .spinner { border: 3px solid rgba(255, 79, 163, 0.2); border-top-color: #FF4FA3; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h1 { font-size: 20px; margin: 0 0 12px; color: #fff; }
+    p { font-size: 14px; color: #94a3b8; line-height: 1.5; margin: 0 0 20px; }
+    .links { display: flex; gap: 10px; justify-content: center; }
+    a { color: #FF4FA3; text-decoration: none; font-size: 14px; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner"></div>
+    <h1>Home Assistant Core Starting Up</h1>
+    <p>Home Assistant Core is initializing configuration and database registries. This page will automatically refresh every 3 seconds.</p>
+    <div class="links">
+      <a href="/yimly">Open Yimly Tracker &rarr;</a>
+    </div>
+  </div>
+</body>
+</html>`);
+          } else {
+            res.status(503).json({
+              message: 'Home Assistant Core is starting up, please try again in a few seconds...',
+              status: 'starting',
+            });
+          }
         }
       },
     },
@@ -106,51 +146,49 @@ async function main() {
     });
   });
 
-  // Web App Manifest for PWA
-  app.get('/manifest.json', (req, res) => {
-    res.json({
-      name: 'Home Assistant / Yimly',
-      short_name: 'Yimly',
-      icons: [{ src: '/favicon.ico', sizes: '64x64', type: 'image/x-icon' }],
-      start_url: '/',
-      display: 'standalone',
-      background_color: '#0f1117',
-      theme_color: '#FF4FA3',
-    });
+  // --- 2. Yimly UI & Frontend Assets ---
+  const distPath = path.join(process.cwd(), 'dist');
+
+  // Serve Yimly static assets
+  app.use('/assets', express.static(path.join(distPath, 'assets')));
+  app.use('/yimly', express.static(distPath));
+  app.get('/yimly*all', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
   });
 
-  // --- 2. Reverse Proxy to REAL Home Assistant Core (/api/* and /auth/*) ---
-  app.use('/auth', haProxy);
-  app.use('/api', haProxy);
-
-  // --- 3. Body Parsing Middleware for Non-Proxied Routes ---
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  // --- 3. Body Parsing for non-proxied requests (if any) ---
+  app.use('/api/yimly', express.json());
+  app.use('/api/yimly', express.urlencoded({ extended: true }));
 
   // --- 4. WebSocket Upgrade Handling to REAL Home Assistant Core ---
   server.on('upgrade', (req, socket, head) => {
-    const url = req.url || '';
-    if (url.startsWith('/api/websocket') || url.startsWith('/api/ws') || url.startsWith('/auth')) {
-      // @ts-ignore
-      haProxy.upgrade(req, socket, head);
-    }
+    // Forward WebSocket upgrades directly to Home Assistant Core
+    // @ts-ignore
+    haProxy.upgrade(req, socket, head);
   });
 
-  // --- 5. Frontend Delivery (Vite Middleware in Dev / Static files in Production) ---
+  // --- 5. Frontend & API Delivery ---
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    // In dev mode (AI Studio preview iframe), redirect root to /yimly
+    app.get('/', (req, res, next) => {
+      // If client is asking for HTML in browser preview, redirect to /yimly
+      const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
+      if (acceptsHtml) {
+        return res.redirect('/yimly');
+      }
+      next();
     });
+    app.use(vite.middlewares);
   }
+
+  // --- 6. Proxied Routes: Pass EVERYTHING else to Real Home Assistant Core! ---
+  // Proxies /, /manifest.json, /api/*, /auth/*, /frontend_latest/*, /static/*, /onboarding.html, /lovelace/*, etc.
+  app.use(haProxy);
 
   // Graceful shutdown handling
   const shutdown = () => {

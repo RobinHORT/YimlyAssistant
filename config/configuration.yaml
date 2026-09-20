@@ -10,9 +10,18 @@ homeassistant:
   time_zone: UTC
   currency: USD
 
-# Core APIs and WebSockets
+# Core APIs, WebSockets, and Web Frontend
 api:
 websocket_api:
+frontend:
+onboarding:
+
+# Panel iframe for custom Yimly Tracker in Home Assistant sidebar
+panel_iframe:
+  yimly:
+    title: "Yimly Tracking"
+    icon: mdi:map-marker-radius
+    url: "/yimly"
 
 # HTTP Server Configuration with trusted proxy for Docker / Cloudflare / Preview
 http:
