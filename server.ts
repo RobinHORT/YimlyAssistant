@@ -2,8 +2,6 @@ import express from 'express';
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
-import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware';
-import { createServer as createViteServer } from 'vite';
 
 const PORT = Number(process.env.PORT) || 8080;
 const HA_PORT = Number(process.env.HA_PORT) || 8123;
@@ -44,28 +42,31 @@ function readStorage<T>(file: string, defaultValue: T): T {
   return defaultValue;
 }
 
-// Proxy Middleware targeting Real Home Assistant Core Backend (port 8123)
-const haProxy = createProxyMiddleware({
-  target: HA_TARGET,
-  changeOrigin: true,
-  ws: true,
-  on: {
-    proxyReq: fixRequestBody,
-    error: (err, req, res: any) => {
-      console.warn(`[HA PROXY] Home Assistant Core at ${HA_TARGET} unavailable:`, err.message);
-      if (res && res.status && !res.headersSent) {
-        res.status(503).json({
-          message: 'Home Assistant Core is starting up, please try again in a few seconds...',
-          status: 'starting',
-        });
-      }
-    },
-  },
-});
-
 async function main() {
   const app = express();
   const server = http.createServer(app);
+
+  // Dynamically import ESM-only http-proxy-middleware for Node.js 20+ CommonJS compatibility
+  const { createProxyMiddleware, fixRequestBody } = await import('http-proxy-middleware');
+
+  // Proxy Middleware targeting Real Home Assistant Core Backend (port 8123)
+  const haProxy = createProxyMiddleware({
+    target: HA_TARGET,
+    changeOrigin: true,
+    ws: true,
+    on: {
+      proxyReq: fixRequestBody,
+      error: (err, req, res: any) => {
+        console.warn(`[HA PROXY] Home Assistant Core at ${HA_TARGET} unavailable:`, err.message);
+        if (res && res.status && !res.headersSent) {
+          res.status(503).json({
+            message: 'Home Assistant Core is starting up, please try again in a few seconds...',
+            status: 'starting',
+          });
+        }
+      },
+    },
+  });
 
   // --- 1. Yimly Diagnostic Endpoints ---
   app.get('/api/yimly/server-status', async (req, res) => {
@@ -137,6 +138,7 @@ async function main() {
 
   // --- 5. Frontend Delivery (Vite Middleware in Dev / Static files in Production) ---
   if (!isProduction) {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
